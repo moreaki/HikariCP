@@ -1,8 +1,112 @@
 HikariCP Changes
 
+Changes in 6.3.1
+
+ * fixed #2315 source jar contains also binary .class files and missing some .java files
+
+ * fixed #2307 remove improper hardcoded timout, use validationTimeout
+
+ * fixed #2305 keep properties key and values as is rather than forcing stringification. Also fixes #2286 and #2304
+
+ * upgraded various maven plugin dependencies to latest versions
+
+Changes in 6.3.0
+
+ * increase keepaliveTime variance from 10% to 20%
+
+ * merged #2266 support duration values for configuration from properties, such as 10ms, 20s, 30m, 40h or 50d
+
+ * merged #2284 align logs from HikariPool.logPoolState()
+
+ * merged #2285 set default value for maxIdle in HikariConfig constructor (no functional change)
+
+ * merged #2294 Allow setting String[] and int[] properties (useful for pgjdbc HA configuration)
+
+ * merged #2300 catch java.lang.Error instead of java.lang.Exception under certain conditions
+
+Changes in 6.2.1
+
+ * change default keepaliveTime to 2 minutes
+
+ * fix commons-compress dependency, make test scope
+
+Changes in 6.2.0
+
+ * merged #2238 handle SQLTimeoutException without eviction. Users looking to preserve previous behavior
+   should provide an implementation of com.zaxxer.hikari.SQLExceptionOverride to the pool configuration.
+
+ * added new enum value, Override.MUST_EVICT, available to implementations of com.zaxxer.hikari.SQLExceptionOverride
+
+ * enhanced debug logging in circumstances where the pool falls to zero size and new connections to the database
+   continue to fail.
+
+ * update test dependencies that were flagged as having vulnerabilities
+
+Changes in 6.1.0
+
+ * fixed #1960 allow SQLExceptionOverride to adjudicate all exceptions for eviction
+
+ * merged #1962 dropwizard 5 metrics are now supported via the setMetricRegistry() method in HikariConfig and in HikariDataSource
+
+ * merged #2244 improve JavassistProxyFactory
+
+ * merged #2243 fix inconsistency between isWrapperFor and unwrap
+
+ * merged #1827 support loading properties file in unnamed resources module
+
+ * merged #1842 don't clear isCommitStateDirty flag in setReadOnly
+
+ * change default maxLifetime variance from 2.5% to 25% to further avoid mass connection die-off dips
+
+Changes in 6.0.0
+
+ * fixed #2152 duplicate connection in try with resources clause caused close() being called twice on each connection
+
+ * merged #2226 consistent handling of errorCode and sqlState in timeout exception
+
+ * merged #2199 eliminate network call if state get is called after set
+
+ * merged #2189 add support to get and set db credentials in an atomic operation
+
+ * merged #2149 make Savepoint rollbacks mark the connection dirty
+
+ * merged #2157 close connections marked as evicted instead of returning them to the pool
+
+ * merged #2147 skip Connection::setNetworkTimeout if PoolBase::shutdownNetworkTimeoutExecutor is called
+
+ * merged #2126 added Support For beginRequest and endRequest
+
+ * small improvements and cleanup from pull request #2166
+
+ * minor debug logging enhancements
+
+Changes in 5.1.0
+
+ * fixed #1907 re-added automatic.module.name that was lost along the way
+
+ * fixed #1986 evict connection exceptions with (SQLState HY000) error code 1105.
+
+ * merged #2059 add support for char[] in DataSource properties
+
+ * merged #1979 and #1993 mask any property that looks like a password in URLs
+
+ * add pool stats to connection acquisition timeout exception
+
+ * merged #2076 don't case metric registry before it is checked for null
+
+ * merged #1820 allow minimum login timeout to be set as system property
+
+ * merged #1952 add more isolation levels
+
+ * merged #1660 remove redundant error log for poll initialization exception
+
+Changes in 5.0.1
+
+ * Update log4j version to 2.17.1 to address Log4Shell vulnerability (although this is only used in tests, so it doesn't really impact users)
+
 Changes in 5.0.0
 
- * rewrote connection elide/add code to fix an unconfirmed but occassionally reported
+ * rewrote connection elide/add code to fix an unconfirmed but occasionally reported
    race condition that results in the pool draining to 0 and not refilling.
 
 Changes in 4.0.3

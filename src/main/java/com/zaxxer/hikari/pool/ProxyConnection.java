@@ -27,10 +27,10 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.Executor;
 
-import static com.zaxxer.hikari.SQLExceptionOverride.Override.DO_NOT_EVICT;
+import static com.zaxxer.hikari.SQLExceptionOverride.Override.*;
 
 /**
- * This is the proxy class for java.sql.Connection.
+ * This is the proxy class for {@link Connection}.
  *
  * @author Brett Wooldridge
  */
@@ -155,14 +155,14 @@ public abstract class ProxyConnection implements Connection
       final var exceptionOverride = poolEntry.getPoolBase().exceptionOverride;
       for (int depth = 0; delegate != ClosedConnection.CLOSED_CONNECTION && nse != null && depth < 10; depth++) {
          final var sqlState = nse.getSQLState();
-         if (sqlState != null && sqlState.startsWith("08")
-             || nse instanceof SQLTimeoutException
+         final var shouldEvict = exceptionOverride != null ? exceptionOverride.adjudicate(nse) : CONTINUE_EVICT;
+         if (shouldEvict == DO_NOT_EVICT) {
+            break;
+         }
+         else if (sqlState != null && sqlState.startsWith("08")
              || ERROR_STATES.contains(sqlState)
-             || ERROR_CODES.contains(nse.getErrorCode())) {
-
-            if (exceptionOverride != null && exceptionOverride.adjudicate(nse) == DO_NOT_EVICT) {
-               break;
-            }
+             || ERROR_CODES.contains(nse.getErrorCode())
+             || shouldEvict == MUST_EVICT) {
 
             // broken connection
             evict = true;
@@ -392,7 +392,17 @@ public abstract class ProxyConnection implements Connection
    public void rollback(Savepoint savepoint) throws SQLException
    {
       delegate.rollback(savepoint);
-      isCommitStateDirty = false;
+      isCommitStateDirty = true;
+   }
+
+   /** {@inheritDoc} */
+   @Override
+   public boolean getAutoCommit() throws SQLException
+   {
+      if ((dirtyBits & DIRTY_BIT_AUTOCOMMIT) != 0) {
+         return isAutoCommit;
+      }
+      return delegate.getAutoCommit();
    }
 
    /** {@inheritDoc} */
@@ -406,12 +416,31 @@ public abstract class ProxyConnection implements Connection
 
    /** {@inheritDoc} */
    @Override
+   public boolean isReadOnly() throws SQLException
+   {
+      if ((dirtyBits & DIRTY_BIT_READONLY) != 0) {
+         return isReadOnly;
+      }
+      return delegate.isReadOnly();
+   }
+
+   /** {@inheritDoc} */
+   @Override
    public void setReadOnly(boolean readOnly) throws SQLException
    {
       delegate.setReadOnly(readOnly);
       isReadOnly = readOnly;
-      isCommitStateDirty = false;
       dirtyBits |= DIRTY_BIT_READONLY;
+   }
+
+   /** {@inheritDoc} */
+   @Override
+   public int getTransactionIsolation() throws SQLException
+   {
+      if ((dirtyBits & DIRTY_BIT_ISOLATION) != 0) {
+         return transactionIsolation;
+      }
+      return delegate.getTransactionIsolation();
    }
 
    /** {@inheritDoc} */
@@ -425,6 +454,16 @@ public abstract class ProxyConnection implements Connection
 
    /** {@inheritDoc} */
    @Override
+   public String getCatalog() throws SQLException
+   {
+      if ((dirtyBits & DIRTY_BIT_CATALOG) != 0) {
+         return dbcatalog;
+      }
+      return delegate.getCatalog();
+   }
+
+   /** {@inheritDoc} */
+   @Override
    public void setCatalog(String catalog) throws SQLException
    {
       delegate.setCatalog(catalog);
@@ -434,11 +473,31 @@ public abstract class ProxyConnection implements Connection
 
    /** {@inheritDoc} */
    @Override
+   public int getNetworkTimeout() throws SQLException
+   {
+      if ((dirtyBits & DIRTY_BIT_NETTIMEOUT) != 0) {
+         return networkTimeout;
+      }
+      return delegate.getNetworkTimeout();
+   }
+
+   /** {@inheritDoc} */
+   @Override
    public void setNetworkTimeout(Executor executor, int milliseconds) throws SQLException
    {
       delegate.setNetworkTimeout(executor, milliseconds);
       networkTimeout = milliseconds;
       dirtyBits |= DIRTY_BIT_NETTIMEOUT;
+   }
+
+   /** {@inheritDoc} */
+   @Override
+   public String getSchema() throws SQLException
+   {
+      if ((dirtyBits & DIRTY_BIT_SCHEMA) != 0) {
+         return dbschema;
+      }
+      return delegate.getSchema();
    }
 
    /** {@inheritDoc} */
@@ -484,20 +543,17 @@ public abstract class ProxyConnection implements Connection
       {
          InvocationHandler handler = (proxy, method, args) -> {
             final String methodName = method.getName();
-            if ("isClosed".equals(methodName)) {
-               return Boolean.TRUE;
-            }
-            else if ("isValid".equals(methodName)) {
-               return Boolean.FALSE;
-            }
-            if ("abort".equals(methodName)) {
-               return Void.TYPE;
-            }
-            if ("close".equals(methodName)) {
-               return Void.TYPE;
-            }
-            else if ("toString".equals(methodName)) {
-               return ClosedConnection.class.getCanonicalName();
+            switch (methodName) {
+               case "isClosed":
+                  return Boolean.TRUE;
+               case "isValid":
+                  return Boolean.FALSE;
+               case "abort":
+                  return Void.TYPE;
+               case "close":
+                  return Void.TYPE;
+               case "toString":
+                  return ClosedConnection.class.getCanonicalName();
             }
 
             throw new SQLException("Connection is closed");

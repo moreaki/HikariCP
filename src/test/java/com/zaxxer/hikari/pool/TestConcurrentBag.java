@@ -69,48 +69,48 @@ public class TestConcurrentBag
    @Test
    public void testConcurrentBag() throws Exception
    {
-      try (ConcurrentBag<PoolEntry> bag = new ConcurrentBag<>((x) -> CompletableFuture.completedFuture(Boolean.TRUE))) {
+      try (ConcurrentBag<PoolEntry> bag = new ConcurrentBag<>(x -> CompletableFuture.completedFuture(Boolean.TRUE))) {
          assertEquals(0, bag.values(8).size());
-   
-         PoolEntry reserved = pool.newPoolEntry();
+
+         PoolEntry reserved = pool.newPoolEntry(false);
          bag.add(reserved);
          bag.reserve(reserved);      // reserved
-   
-         PoolEntry inuse = pool.newPoolEntry();
+
+         PoolEntry inuse = pool.newPoolEntry(false);
          bag.add(inuse);
          bag.borrow(2, MILLISECONDS); // in use
-   
-         PoolEntry notinuse = pool.newPoolEntry();
+
+         PoolEntry notinuse = pool.newPoolEntry(false);
          bag.add(notinuse); // not in use
-   
+
          bag.dumpState();
-   
+
          ByteArrayOutputStream baos = new ByteArrayOutputStream();
          PrintStream ps = new PrintStream(baos, true);
          setSlf4jTargetStream(ConcurrentBag.class, ps);
-   
+
          bag.requite(reserved);
-   
+
          bag.remove(notinuse);
          assertTrue(new String(baos.toByteArray()).contains("not borrowed or reserved"));
-   
+
          bag.unreserve(notinuse);
          assertTrue(new String(baos.toByteArray()).contains("was not reserved"));
-   
+
          bag.remove(inuse);
          bag.remove(inuse);
          assertTrue(new String(baos.toByteArray()).contains("not borrowed or reserved"));
-   
+
          bag.close();
          try {
-            PoolEntry bagEntry = pool.newPoolEntry();
+            PoolEntry bagEntry = pool.newPoolEntry(false);
             bag.add(bagEntry);
             assertNotEquals(bagEntry, bag.borrow(100, MILLISECONDS));
          }
          catch (IllegalStateException e) {
             assertTrue(new String(baos.toByteArray()).contains("ignoring add()"));
          }
-   
+
          assertNotNull(notinuse.toString());
       }
    }

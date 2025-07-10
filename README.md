@@ -7,12 +7,18 @@
 [![][Javadocs img]][Javadocs]
 [![][Librapay img]][Librapay]
 
-Fast, simple, reliable.  HikariCP is a "zero-overhead" production ready JDBC connection pool.  At roughly 130Kb, the library is very light.  Read about [how we do it here](https://github.com/brettwooldridge/HikariCP/wiki/Down-the-Rabbit-Hole).
+Fast, simple, reliable.  HikariCP is a "zero-overhead" production ready JDBC connection pool.  At roughly 165Kb, the library is very light.  Read about [how we do it here](https://github.com/brettwooldridge/HikariCP/wiki/Down-the-Rabbit-Hole).
 
 &nbsp;&nbsp;&nbsp;<sup>**"Simplicity is prerequisite for reliability."**<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- *Edsger Dijkstra*</sup>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;- *Dr. Edsger Dijkstra*</sup>
 
 ----------------------------------------------------
+
+> [!IMPORTANT]
+> In order to avoid a rare condition where the pool goes to zero and does not recover it is necessary to configure *TCP keepalive*. Some JDBC drivers support this via properties, for example ``tcpKeepAlive=true`` on PostgreSQL, but in any case it can also be configured at the OS-level. See [Setting OS TCP Keepalive](https://github.com/brettwooldridge/HikariCP/wiki/Setting-Driver-or-OS-TCP-Keepalive) and/or [TCP keepalive for a better PostgreSQL experience](https://www.cybertec-postgresql.com/en/tcp-keepalive-for-a-better-postgresql-experience/#setting-tcp-keepalive-parameters-on-the-operating-system).
+
+----------------------------------------------------
+
 ### Index
 * [Artifacts](#artifacts)
 * [JMH Benchmarks](#checkered_flag-jmh-benchmarks)
@@ -32,15 +38,15 @@ Fast, simple, reliable.  HikariCP is a "zero-overhead" production ready JDBC con
 
 ### Artifacts
 
-_**Java 11+** maven artifact:_
+_**Java 11 or greater** maven artifact:_
 ```xml
 <dependency>
    <groupId>com.zaxxer</groupId>
    <artifactId>HikariCP</artifactId>
-   <version>5.0.1</version>
+   <version>6.3.0</version>
 </dependency>
 ```
-_Java 8 maven artifact (*maintenance mode*):_
+_Java 8 maven artifact (*deprecated*):_
 ```xml
 <dependency>
    <groupId>com.zaxxer</groupId>
@@ -48,7 +54,7 @@ _Java 8 maven artifact (*maintenance mode*):_
    <version>4.0.3</version>
 </dependency>
 ```
-_Java 7 maven artifact (*maintenance mode*):_
+_Java 7 maven artifact (*deprecated*):_
 ```xml
 <dependency>
    <groupId>com.zaxxer</groupId>
@@ -56,7 +62,7 @@ _Java 7 maven artifact (*maintenance mode*):_
    <version>2.4.13</version>
 </dependency>
 ```
-_Java 6 maven artifact (*maintenance mode*):_
+_Java 6 maven artifact (*deprecated*):_
 ```xml
 <dependency>
    <groupId>com.zaxxer</groupId>
@@ -97,7 +103,7 @@ The customer's environment imposed a high cost of new connection acquisition, an
 <br/>
 #### You're [probably] doing it wrong
 <a href="https://github.com/brettwooldridge/HikariCP/wiki/About-Pool-Sizing"><img width="200" align="right" src="https://github.com/brettwooldridge/HikariCP/wiki/Postgres_Chart.png"></a>
-AKA *"What you probably didn't know about connection pool sizing"*.  Watch a video from the Oracle Real-world Performance group, and learn about why connection pools do not need to be sized as large as they often are.  In fact, oversized connection pools have a clear and demonstrable *negative* impact on performance; a 50x difference in the case of the Oracle demonstration.  [Read on to find out](https://github.com/brettwooldridge/HikariCP/wiki/About-Pool-Sizing).
+AKA *"What you probably didn't know about connection pool sizing"*.  Watch a video from the Oracle Real-world Performance group, and learn about why database connections do not need to be so numerous as they often are. In fact, too many connections have a clear and demonstrable *negative* impact on performance; a 50x difference in the case of the Oracle demonstration.  [Read on to find out](https://github.com/brettwooldridge/HikariCP/wiki/About-Pool-Sizing).
 <br/>
 #### WIX Engineering Analysis
 <a href="https://www.wix.engineering/blog/how-does-hikaricp-compare-to-other-connection-pools"><img width="180" align="left" src="https://github.com/brettwooldridge/HikariCP/wiki/Wix-Engineering.png"></a>
@@ -120,6 +126,9 @@ Open source software like HikariCP, like any product, competes in the free marke
 [![](https://github.com/brettwooldridge/HikariCP/wiki/tweet2.png)](https://twitter.com/brettemeyer)<br/>
 [![](https://github.com/brettwooldridge/HikariCP/wiki/tweet4.png)](https://twitter.com/dgomesbr/status/527521925401419776)
 
+If you like this project, consider leaving a word for us on social media:
+
+[![](https://raw.github.com/wiki/brettwooldridge/HikariCP/twitter.png)](https://twitter.com/share?text=Interesting%20JDBC%20Connection%20Pool&hashtags=HikariCP&url=https%3A%2F%2Fgithub.com%2Fbrettwooldridge%2FHikariCP)&nbsp;[![](https://raw.github.com/wiki/brettwooldridge/HikariCP/facebook.png)](http://www.facebook.com/plugins/like.php?href=https%3A%2F%2Fgithub.com%2Fbrettwooldridge%2FHikariCP&width&layout=standard&action=recommend&show_faces=true&share=false&height=80)
 ------------------------------
 ### :gear: Configuration (knobs, baby!)
 HikariCP comes with *sane* defaults that perform well in most deployments without additional tweaking. **Every property is optional, except for the "essentials" marked below.**
@@ -203,7 +212,7 @@ pool. The 'ping' is one of either: invocation of the JDBC4 `isValid()` method, o
 `connectionTestQuery`. Typically, the duration out-of-the-pool should be measured in single digit milliseconds
 or even sub-millisecond, and therefore should have little or no noticeable performance impact. The minimum
 allowed value is 30000ms (30 seconds), but a value in the range of minutes is most desirable.
-*Default: 0 (disabled)*
+*Default: 120000 (2 minutes)*
 
 &#9203;``maxLifetime``<br/>
 This property controls the maximum lifetime of a connection in the pool.  An in-use connection will
@@ -335,7 +344,7 @@ is disabled.  Lowest acceptable value for enabling leak detection is 2000 (2 sec
 *Default: 0*
 
 &#10145;``dataSource``<br/>
-This property is only available via programmatic configuration or IoC container.  This property
+This property is only available via programmatic configuration or IoC container. This property
 allows you to directly set the instance of the ``DataSource`` to be wrapped by the pool, rather than
 having HikariCP construct it via reflection.  This can be useful in some dependency injection
 frameworks. When this property is specified, the ``dataSourceClassName`` property and all
@@ -348,17 +357,35 @@ If this property is not specified, the default schema defined by the JDBC driver
 *Default: driver default*
 
 &#10145;``threadFactory``<br/>
-This property is only available via programmatic configuration or IoC container.  This property
+This property is only available via programmatic configuration or IoC container. This property
 allows you to set the instance of the ``java.util.concurrent.ThreadFactory`` that will be used
 for creating all threads used by the pool. It is needed in some restricted execution environments
 where threads can only be created through a ``ThreadFactory`` provided by the application container.
 *Default: none*
 
 &#10145;``scheduledExecutor``<br/>
-This property is only available via programmatic configuration or IoC container.  This property
+This property is only available via programmatic configuration or IoC container. This property
 allows you to set the instance of the ``java.util.concurrent.ScheduledExecutorService`` that will
 be used for various internally scheduled tasks.  If supplying HikariCP with a ``ScheduledThreadPoolExecutor``
 instance, it is recommended that ``setRemoveOnCancelPolicy(true)`` is used.
+*Default: none*
+
+&#10145;``exceptionOverride``<br/>
+This property is only available via programmatic configuration or IoC container. This property
+allows you to set an instance of a class, implementing the ``com.zaxxer.hikari.SQLExceptionOverride``
+interface, that will be called before a connection is evicted from the pool due to specific exception
+conditions. Typically, when a ``SQLException`` is thrown, connections are evicted from the pool when
+specific *SQLStates* or *ErrorCodes* are present. The ``adjudicate()`` method will be called on the
+``SQLExceptionOverride`` instance, which may return one of: ``Override.CONTINUE_EVICT``.
+``Override.DO_NOT_EVICT`` or ``Override.MUST_EVICT``. Except in very specific cases
+``Override.CONTINUE_EVICT`` should be returned, allowing the default evict/no-evict logic to execute.
+*Default: none*
+
+&#128292;``exceptionOverrideClassName``<br/>
+This property allows you to specify the name of a user-supplied class implementing the
+``com.zaxxer.hikari.SQLExceptionOverride`` interface. An instance of the class will be instantiated
+by the pool to adjudicate connection evictions. See the above property ``exceptionOverride`` for a
+full description.
 *Default: none*
 
 ----------------------------------------------------
@@ -401,6 +428,22 @@ and also note the availability of [log4jdbc](https://github.com/arthurblake/log4
 Please read the [Rapid Recovery Guide](https://github.com/brettwooldridge/HikariCP/wiki/Rapid-Recovery) for details on how to configure your driver and system for proper recovery from database restart and network partition events.
 
 ----------------------------------------------------
+
+### :see_no_evil: Secret Properties
+
+HikariCP has several Java system properties that control various aspects of the pool. These properties are *completely unsupported*
+for user manipulation. It is possible though unlikely that they may not exist in the future. This means: do not even think of opening
+an issue of any kind if you have modified these properties. You have been warned. *In fact, pretend you never heard anything about
+"secret properties".*
+
+| Property                                      | Description                                                                                                                                                                                                                                       |
+|:----------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ``com.zaxxer.hikari.blockUntilFilled``        | When this property is set ``true`` *and* ``initializationFailTimeout`` is greater than 1, the pool will block during start until completely filled.                                                                                               |
+| ``com.zaxxer.hikari.enableRequestBoundaries`` | When this property is set ``true``, HikariCP will bracket connection acquisition and return with calls to ``Connection.beginRequest()`` and ``Connection.endRequest()``.                                                                          |
+| ``com.zaxxer.hikari.housekeeping.period``     | This property controls the frequency of the housekeeping thread, represented in milliseconds. Really, don't mess with this.                                                                                                                       |
+| ``com.zaxxer.hikari.useWeakReferences``       | When this property is set ``true`` it will force HikariCP to use ``WeakReference`` objects in the ``ConcurrentBag`` internal collection ThreadLocals and prevent the use of our ``FastList`` class, all to avoid TomCat warnings during redeploy. |
+
+Seriously, either don't use these properties or take on full responsibility for the consequences.
 
 ### :rocket: Initialization
 
@@ -505,12 +548,6 @@ A new JRuby wrapper has been created by [tomekw](https://github.com/tomekw) and 
 
 ----------------------------------------------------
 
-### Support <sup><sup>&#128172;</sup></sup>
-
-Google discussion group [HikariCP here](https://groups.google.com/d/forum/hikari-cp), growing [FAQ](https://github.com/brettwooldridge/HikariCP/wiki/FAQ).
-
-[![](https://raw.github.com/wiki/brettwooldridge/HikariCP/twitter.png)](https://twitter.com/share?text=Interesting%20JDBC%20Connection%20Pool&hashtags=HikariCP&url=https%3A%2F%2Fgithub.com%2Fbrettwooldridge%2FHikariCP)&nbsp;[![](https://raw.github.com/wiki/brettwooldridge/HikariCP/facebook.png)](http://www.facebook.com/plugins/like.php?href=https%3A%2F%2Fgithub.com%2Fbrettwooldridge%2FHikariCP&width&layout=standard&action=recommend&show_faces=true&share=false&height=80)
-
 ### Wiki
 
 Don't forget the [Wiki](https://github.com/brettwooldridge/HikariCP/wiki) for additional information such as:
@@ -523,7 +560,7 @@ Don't forget the [Wiki](https://github.com/brettwooldridge/HikariCP/wiki) for ad
 
 ### Requirements
 
- &#8658; Java 8+ (Java 6/7 artifacts are in maintenance mode)<br/>
+ &#8658; Java 11+ (Java 6/7/8 artifacts are in maintenance mode)<br/>
  &#8658; slf4j library<br/>
 
 ### Sponsors

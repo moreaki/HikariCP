@@ -14,26 +14,30 @@
  * limitations under the License.
  */
 
-package com.zaxxer.hikari.metrics.micrometer;
+package com.zaxxer.hikari.metrics.dropwizard;
 
 import com.zaxxer.hikari.metrics.IMetricsTracker;
 import com.zaxxer.hikari.metrics.MetricsTrackerFactory;
 import com.zaxxer.hikari.metrics.PoolStats;
-import io.micrometer.core.instrument.MeterRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 
-public class MicrometerMetricsTrackerFactory implements MetricsTrackerFactory
+public class Dropwizard5MetricsTrackerFactory implements MetricsTrackerFactory
 {
+   private final MetricRegistry registry;
 
-   private final MeterRegistry registry;
-
-   public MicrometerMetricsTrackerFactory(MeterRegistry registry)
+   public Dropwizard5MetricsTrackerFactory(final MetricRegistry registry)
    {
       this.registry = registry;
    }
 
-   @Override
-   public IMetricsTracker create(String poolName, PoolStats poolStats)
+   public MetricRegistry getRegistry()
    {
-      return new MicrometerMetricsTracker(poolName, poolStats, registry);
+      return registry;
+   }
+
+   @Override
+   public IMetricsTracker create(final String poolName, final PoolStats poolStats)
+   {
+      return new Dropwizard5MetricsTracker(poolName, poolStats, registry);
    }
 }

@@ -18,6 +18,7 @@ package com.zaxxer.hikari;
 
 import com.codahale.metrics.health.HealthCheckRegistry;
 import com.zaxxer.hikari.metrics.MetricsTrackerFactory;
+import com.zaxxer.hikari.util.Credentials;
 import com.zaxxer.hikari.util.PropertyElf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,9 +26,7 @@ import org.slf4j.LoggerFactory;
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
 import javax.sql.DataSource;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
+import java.io.*;
 import java.lang.reflect.Modifier;
 import java.security.AccessControlException;
 import java.sql.Connection;
@@ -36,9 +35,9 @@ import java.util.TreeSet;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicReference;
 
-import static com.zaxxer.hikari.util.UtilityElf.getNullIfEmpty;
-import static com.zaxxer.hikari.util.UtilityElf.safeIsAssignableFrom;
+import static com.zaxxer.hikari.util.UtilityElf.*;
 import static java.util.concurrent.TimeUnit.MINUTES;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
@@ -53,7 +52,7 @@ public class HikariConfig implements HikariConfigMXBean
    private static final long SOFT_TIMEOUT_FLOOR = Long.getLong("com.zaxxer.hikari.timeoutMs.floor", 250L);
    private static final long IDLE_TIMEOUT = MINUTES.toMillis(10);
    private static final long MAX_LIFETIME = MINUTES.toMillis(30);
-   private static final long DEFAULT_KEEPALIVE_TIME = 0L;
+   private static final long DEFAULT_KEEPALIVE_TIME = MINUTES.toMillis(2);
    private static final int DEFAULT_POOL_SIZE = 10;
 
    private static boolean unitTest = false;
@@ -68,8 +67,7 @@ public class HikariConfig implements HikariConfigMXBean
    private volatile long maxLifetime;
    private volatile int maxPoolSize;
    private volatile int minIdle;
-   private volatile String username;
-   private volatile String password;
+   private final AtomicReference<Credentials> credentials = new AtomicReference<>(Credentials.of(null, null));
 
    // Properties NOT changeable at runtime
    //
@@ -80,6 +78,7 @@ public class HikariConfig implements HikariConfigMXBean
    private String dataSourceJndiName;
    private String driverClassName;
    private String exceptionOverrideClassName;
+   private SQLExceptionOverride exceptionOverride;
    private String jdbcUrl;
    private String poolName;
    private String schema;
@@ -117,7 +116,7 @@ public class HikariConfig implements HikariConfigMXBean
       healthCheckProperties = new Properties();
 
       minIdle = -1;
-      maxPoolSize = -1;
+      maxPoolSize = DEFAULT_POOL_SIZE;
       maxLifetime = MAX_LIFETIME;
       connectionTimeout = CONNECTION_TIMEOUT;
       validationTimeout = VALIDATION_TIMEOUT;
@@ -283,7 +282,7 @@ public class HikariConfig implements HikariConfigMXBean
     */
    public String getPassword()
    {
-      return password;
+      return credentials.get().getPassword();
    }
 
    /**
@@ -293,7 +292,7 @@ public class HikariConfig implements HikariConfigMXBean
    @Override
    public void setPassword(String password)
    {
-      this.password = password;
+      credentials.updateAndGet(current -> Credentials.of(current.getUsername(), password));
    }
 
    /**
@@ -303,7 +302,7 @@ public class HikariConfig implements HikariConfigMXBean
     */
    public String getUsername()
    {
-      return username;
+      return credentials.get().getUsername();
    }
 
    /**
@@ -314,7 +313,28 @@ public class HikariConfig implements HikariConfigMXBean
    @Override
    public void setUsername(String username)
    {
-      this.username = username;
+      credentials.updateAndGet(current -> Credentials.of(username, current.getPassword()));
+   }
+
+   /**
+    * Atomically set the default username and password to use for DataSource.getConnection(username, password) calls.
+    *
+    * @param credentials the username and password pair
+    */
+   @Override
+   public void setCredentials(final Credentials credentials)
+   {
+      this.credentials.set(credentials);
+   }
+
+   /**
+    * Atomically get the default username and password to use for DataSource.getConnection(username, password) calls.
+    *
+    * @return the username and password pair
+    */
+   public Credentials getCredentials()
+   {
+      return credentials.get();
    }
 
    /** {@inheritDoc} */
@@ -432,11 +452,11 @@ public class HikariConfig implements HikariConfigMXBean
 
    /**
     * Add a property (name/value pair) that will be used to configure the {@link DataSource}/{@link java.sql.Driver}.
-    *
+    * <p>
     * In the case of a {@link DataSource}, the property names will be translated to Java setters following the Java Bean
     * naming convention.  For example, the property {@code cachePrepStmts} will translate into {@code setCachePrepStmts()}
     * with the {@code value} passed as a parameter.
-    *
+    * <p>
     * In the case of a {@link java.sql.Driver}, the property will be added to a {@link Properties} instance that will
     * be passed to the driver during {@link java.sql.Driver#connect(String, Properties)} calls.
     *
@@ -671,8 +691,10 @@ public class HikariConfig implements HikariConfigMXBean
          metricRegistry = getObjectOrPerformJndiLookup(metricRegistry);
 
          if (!safeIsAssignableFrom(metricRegistry, "com.codahale.metrics.MetricRegistry")
+             && !(safeIsAssignableFrom(metricRegistry, "io.dropwizard.metrics5.MetricRegistry"))
              && !(safeIsAssignableFrom(metricRegistry, "io.micrometer.core.instrument.MeterRegistry"))) {
-            throw new IllegalArgumentException("Class must be instance of com.codahale.metrics.MetricRegistry or io.micrometer.core.instrument.MeterRegistry");
+            throw new IllegalArgumentException("Class must be instance of com.codahale.metrics.MetricRegistry, " +
+               "io.dropwizard.metrics5.MetricRegistry, or io.micrometer.core.instrument.MeterRegistry");
          }
       }
 
@@ -892,13 +914,40 @@ public class HikariConfig implements HikariConfigMXBean
          throw new RuntimeException("Failed to load SQLExceptionOverride class " + exceptionOverrideClassName + " in either of HikariConfig class loader or Thread context classloader");
       }
 
+      if (!SQLExceptionOverride.class.isAssignableFrom(overrideClass)) {
+         throw new RuntimeException("Loaded SQLExceptionOverride class " + exceptionOverrideClassName + " does not implement " + SQLExceptionOverride.class.getName());
+      }
+
       try {
-         overrideClass.getConstructor().newInstance();
+         this.exceptionOverride = (SQLExceptionOverride) overrideClass.getConstructor().newInstance();
          this.exceptionOverrideClassName = exceptionOverrideClassName;
       }
       catch (Exception e) {
          throw new RuntimeException("Failed to instantiate class " + exceptionOverrideClassName, e);
       }
+   }
+
+
+   /**
+    * Get the SQLExceptionOverride instance created by {@link #setExceptionOverrideClassName(String)}.
+    *
+    * @return the SQLExceptionOverride instance, or null if {@link #setExceptionOverrideClassName(String)} is not called
+    * @see SQLExceptionOverride
+    */
+   public SQLExceptionOverride getExceptionOverride()
+   {
+      return this.exceptionOverride;
+   }
+
+   /**
+    * Set the user supplied SQLExceptionOverride instance.
+    *
+    * @param exceptionOverride the user supplied SQLExceptionOverride instance
+    * @see SQLExceptionOverride
+    */
+   public void setExceptionOverride(SQLExceptionOverride exceptionOverride) {
+      checkIfSealed();
+      this.exceptionOverride = exceptionOverride;
    }
 
    /**
@@ -945,17 +994,20 @@ public class HikariConfig implements HikariConfigMXBean
     *
     * @param other Other {@link HikariConfig} to copy the state to.
     */
+   @SuppressWarnings({"rawtypes", "unchecked"})
    public void copyStateTo(HikariConfig other)
    {
       for (var field : HikariConfig.class.getDeclaredFields()) {
-         if (!Modifier.isFinal(field.getModifiers())) {
-            field.setAccessible(true);
-            try {
+         try {
+            if (!Modifier.isFinal(field.getModifiers())) {
+               field.setAccessible(true);
                field.set(other, field.get(this));
+            } else if (field.getType().isAssignableFrom(AtomicReference.class)) {
+               ((AtomicReference) field.get(other)).set(((AtomicReference) field.get(this)).get());
             }
-            catch (Exception e) {
-               throw new RuntimeException("Failed to copy HikariConfig state: " + e.getMessage(), e);
-            }
+         }
+         catch (Exception e) {
+            throw new RuntimeException("Failed to copy HikariConfig state: " + e.getMessage(), e);
          }
       }
 
@@ -966,15 +1018,15 @@ public class HikariConfig implements HikariConfigMXBean
    //                          Private methods
    // ***********************************************************************
 
-   private Class<?> attemptFromContextLoader(final String driverClassName) {
+   private Class<?> attemptFromContextLoader(final String className) {
       final var threadContextClassLoader = Thread.currentThread().getContextClassLoader();
       if (threadContextClassLoader != null) {
          try {
-            final var driverClass = threadContextClassLoader.loadClass(driverClassName);
-            LOGGER.debug("Driver class {} found in Thread context class loader {}", driverClassName, threadContextClassLoader);
+            final var driverClass = threadContextClassLoader.loadClass(className);
+            LOGGER.debug("Class {} found in Thread context class loader {}", className, threadContextClassLoader);
             return driverClass;
          } catch (ClassNotFoundException e) {
-            LOGGER.debug("Driver class {} not found in Thread context class loader {}, trying classloader {}",
+            LOGGER.debug("Class {} not found in Thread context class loader {}, trying classloader {}",
                driverClassName, threadContextClassLoader, this.getClass().getClassLoader());
          }
       }
@@ -1046,16 +1098,16 @@ public class HikariConfig implements HikariConfigMXBean
          maxLifetime = MAX_LIFETIME;
       }
 
-      // keepalive time must larger then 30 seconds
+      // keepalive time must larger than 30 seconds
       if (keepaliveTime != 0 && keepaliveTime < SECONDS.toMillis(30)) {
          LOGGER.warn("{} - keepaliveTime is less than 30000ms, disabling it.", poolName);
-         keepaliveTime = DEFAULT_KEEPALIVE_TIME;
+         keepaliveTime = 0L;
       }
 
       // keepalive time must be less than maxLifetime (if maxLifetime is enabled)
       if (keepaliveTime != 0 && maxLifetime != 0 && keepaliveTime >= maxLifetime) {
          LOGGER.warn("{} - keepaliveTime is greater than or equal to maxLifetime, disabling it.", poolName);
-         keepaliveTime = DEFAULT_KEEPALIVE_TIME;
+         keepaliveTime = 0L;
       }
 
       if (leakDetectionThreshold > 0 && !unitTest) {
@@ -1073,10 +1125,6 @@ public class HikariConfig implements HikariConfigMXBean
       if (validationTimeout < SOFT_TIMEOUT_FLOOR) {
          LOGGER.warn("{} - validationTimeout is less than {}ms, setting to {}ms.", poolName, SOFT_TIMEOUT_FLOOR, VALIDATION_TIMEOUT);
          validationTimeout = VALIDATION_TIMEOUT;
-      }
-
-      if (maxPoolSize < 1) {
-         maxPoolSize = DEFAULT_POOL_SIZE;
       }
 
       if (minIdle < 0 || minIdle > maxPoolSize) {
@@ -1124,7 +1172,7 @@ public class HikariConfig implements HikariConfigMXBean
                value = "internal";
             }
             else if (prop.contains("jdbcUrl") && value instanceof String) {
-               value = ((String)value).replaceAll("([?&;][^&#;=]*[pP]assword=)[^&#;]*", "$1<masked>");
+               value = maskPasswordInJdbcUrl((String) value);
             }
             else if (prop.contains("password")) {
                value = "<masked>";
@@ -1145,8 +1193,7 @@ public class HikariConfig implements HikariConfigMXBean
 
    private void loadProperties(String propertyFileName)
    {
-      final var propFile = new File(propertyFileName);
-      try (final var is = propFile.isFile() ? new FileInputStream(propFile) : this.getClass().getResourceAsStream(propertyFileName)) {
+      try (final var is = openPropertiesInputStream(propertyFileName)) {
          if (is != null) {
             var props = new Properties();
             props.load(is);
@@ -1159,6 +1206,18 @@ public class HikariConfig implements HikariConfigMXBean
       catch (IOException io) {
          throw new RuntimeException("Failed to read property file", io);
       }
+   }
+
+   private InputStream openPropertiesInputStream(String propertyFileName) throws FileNotFoundException {
+      final var propFile = new File(propertyFileName);
+      if (propFile.isFile()) {
+         return new FileInputStream(propFile);
+      }
+      var propertiesInputStream = this.getClass().getResourceAsStream(propertyFileName);
+      if (propertiesInputStream == null) {
+        propertiesInputStream = this.getClass().getClassLoader().getResourceAsStream(propertyFileName);
+      }
+      return propertiesInputStream;
    }
 
    private String generatePoolName()

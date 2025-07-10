@@ -41,6 +41,7 @@ import com.zaxxer.hikari.util.UtilityElf;
 /**
  *
  * @author Brett Wooldridge
+ * @author Yanming Zhou
  */
 public class StubConnection extends StubBaseConnection
 {
@@ -54,7 +55,10 @@ public class StubConnection extends StubBaseConnection
    private boolean autoCommit;
    private int isolation = Connection.TRANSACTION_READ_COMMITTED;
    private String catalog;
+   private String schema;
    private long waitTimeout;
+   public boolean beginRequestCalled = false;
+   public boolean endRequestCalled = false;
 
    private static ScheduledExecutorService connectionWaitTimeout = new ScheduledThreadPoolExecutor(1);
    private ScheduledFuture<?> waitTimeoutTask;
@@ -142,6 +146,9 @@ public class StubConnection extends StubBaseConnection
    @Override
    public boolean getAutoCommit() throws SQLException
    {
+      if (throwException) {
+         throw new SQLException();
+      }
       return autoCommit;
    }
 
@@ -230,6 +237,9 @@ public class StubConnection extends StubBaseConnection
    @Override
    public String getCatalog() throws SQLException
    {
+      if (throwException) {
+         throw new SQLException();
+      }
       return catalog;
    }
 
@@ -247,6 +257,9 @@ public class StubConnection extends StubBaseConnection
    @Override
    public int getTransactionIsolation() throws SQLException
    {
+      if (throwException) {
+         throw new SQLException();
+      }
       return isolation;
    }
 
@@ -490,12 +503,19 @@ public class StubConnection extends StubBaseConnection
    /** {@inheritDoc} */
    public void setSchema(String schema) throws SQLException
    {
+      if (throwException) {
+         throw new SQLException();
+      }
+      this.schema = schema;
    }
 
    /** {@inheritDoc} */
    public String getSchema() throws SQLException
    {
-      return null;
+      if (throwException) {
+         throw new SQLException();
+      }
+      return schema;
    }
 
    /** {@inheritDoc} */
@@ -507,6 +527,9 @@ public class StubConnection extends StubBaseConnection
    /** {@inheritDoc} */
    public void setNetworkTimeout(Executor executor, int milliseconds) throws SQLException
    {
+      if (throwException) {
+         throw new SQLException();
+      }
       if (networkTimeoutSetter != null) {
          try {
             networkTimeoutSetter.call();
@@ -523,6 +546,10 @@ public class StubConnection extends StubBaseConnection
    /** {@inheritDoc} */
    public int getNetworkTimeout() throws SQLException
    {
+      if (throwException) {
+         throw new SQLException();
+      }
+
       if (oldDriver) {
          throw new AbstractMethodError();
       }
@@ -530,4 +557,13 @@ public class StubConnection extends StubBaseConnection
       return 0;
    }
 
+   @Override
+   public void beginRequest() {
+      beginRequestCalled = true;
+   }
+
+   @Override
+   public void endRequest() {
+      endRequestCalled = true;
+   }
 }
